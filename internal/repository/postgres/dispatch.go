@@ -30,6 +30,10 @@ func (s *Store) Flush(ctx context.Context, publish func(context.Context, []Event
 		return 0, e
 	}
 	defer tx.Rollback()
+	var locked bool
+	if e = tx.QueryRowContext(ctx, "SELECT pg_try_advisory_xact_lock(784031910)").Scan(&locked); e != nil || !locked {
+		return 0, e
+	}
 	rows, e := tx.QueryContext(ctx, `SELECT seq,notification_id,coalesce(batch_id::text,''),channel,priority,recipient,previous_status,current_status,due_at,retry_count,reason,correlation_id,traceparent,created_at FROM notification_outbox ORDER BY seq LIMIT 1000 FOR UPDATE SKIP LOCKED`)
 	if e != nil {
 		return 0, e
