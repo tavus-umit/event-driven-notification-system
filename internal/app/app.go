@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"event-driven-notification-system/internal/config"
+	"event-driven-notification-system/internal/observe"
 	broker "event-driven-notification-system/internal/queue/redis"
 	"event-driven-notification-system/internal/repository/postgres"
 	"event-driven-notification-system/pkg/logger"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -34,6 +36,15 @@ func start(ctx context.Context, run func(context.Context, *Services) error) erro
 		return e
 	}
 	slog.SetDefault(logger.New(os.Stdout, c.Level))
+	shutdown, e := observe.Tracing(ctx, filepath.Base(os.Args[0]))
+	if e != nil {
+		return e
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = shutdown(flush)
+	}()
 	s, e := postgres.Open(ctx, c)
 	if e != nil {
 		return e

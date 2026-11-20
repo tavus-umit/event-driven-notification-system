@@ -5,6 +5,7 @@ import (
 	"errors"
 	"event-driven-notification-system/internal/app"
 	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/internal/observe"
 	"event-driven-notification-system/internal/provider"
 	broker "event-driven-notification-system/internal/queue/redis"
 	"event-driven-notification-system/internal/ratelimit"
@@ -113,6 +114,17 @@ func (p *Pool) handle(ctx context.Context, l *broker.Lease, owner string) error 
 	}
 	a, status, due := outcome(n, result, started)
 	e = p.Service.Store.Finish(ctx, n.ID, owner, a, status, result.MessageID, due)
+	if e == nil {
+		ch := string(n.Channel)
+		observe.Latency.WithLabelValues(ch).Observe(float64(a.DurationMS) / 1000)
+		observe.Deliveries.WithLabelValues(ch, string(status)).Inc()
+		if status == domain.Failed {
+			observe.DLQ.WithLabelValues(ch).Inc()
+		}
+		if status == domain.RetryPending {
+			observe.Retries.WithLabelValues(ch).Inc()
+		}
+	}
 	logger.From(ctx).Info("delivery attempt", "notification_id", n.ID, "channel", n.Channel, "attempt", a.Number, "status", status, "duration_ms", a.DurationMS, "error", e)
 	return e
 }

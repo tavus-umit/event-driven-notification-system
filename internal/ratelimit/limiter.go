@@ -3,6 +3,7 @@ package ratelimit
 import (
 	"context"
 	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/internal/observe"
 	"github.com/google/uuid"
 	r "github.com/redis/go-redis/v9"
 	"time"
@@ -53,6 +54,7 @@ func (l Limiter) Wait(ctx context.Context, c domain.Channel) (*Permit, error) {
 		if e != nil || p != nil {
 			return p, e
 		}
+		observe.Throttled.WithLabelValues(string(c)).Inc()
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
