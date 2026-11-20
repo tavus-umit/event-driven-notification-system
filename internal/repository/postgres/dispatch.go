@@ -85,7 +85,7 @@ func (s *Store) Finish(ctx context.Context, id, owner string, a domain.DeliveryA
 	return tx.Commit()
 }
 func (s *Store) Promote(ctx context.Context, id string, from domain.Status, retry int) error {
-	_, e := s.DB.ExecContext(ctx, `UPDATE notifications SET status='QUEUED',due_at=NULL,updated_at=now() WHERE id=$1 AND status=$2 AND retry_count=$3 AND coalesce(due_at,scheduled_at)<=now()`, id, from, retry)
+	_, e := s.DB.ExecContext(ctx, `UPDATE notifications SET status='QUEUED',due_at=NULL,updated_at=now() WHERE id=$1 AND status=$2 AND ($3=-1 OR retry_count=$3) AND coalesce(due_at,scheduled_at)<=now()`, id, from, retry)
 	return e
 }
 func (s *Store) Recover(ctx context.Context) error {
