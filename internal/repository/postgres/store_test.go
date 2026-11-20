@@ -1,27 +1,22 @@
-package postgres
+package postgres_test
 
 import (
 	"context"
 	"errors"
-	"event-driven-notification-system/internal/config"
-	"event-driven-notification-system/internal/domain"
+
 	"github.com/google/uuid"
-	"os"
+
+	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/internal/testutil"
+
 	"testing"
 	"time"
 )
 
 func TestBatchAndLease(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("set TEST_DATABASE_URL to an isolated PostgreSQL database")
-	}
+	s := testutil.Services(t, 15).Store
 	ctx := context.Background()
-	s, e := Open(ctx, config.Config{DatabaseURL: dsn, MaxOpen: 8, MaxIdle: 2})
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer s.DB.Close()
+	var e error
 	id := uuid.NewString()
 	ns := make([]domain.Notification, 1000)
 	for i := range ns {

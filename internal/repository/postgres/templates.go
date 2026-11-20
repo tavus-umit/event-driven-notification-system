@@ -2,8 +2,10 @@ package postgres
 
 import (
 	"context"
-	"event-driven-notification-system/internal/domain"
+
 	"github.com/google/uuid"
+
+	"event-driven-notification-system/internal/domain"
 )
 
 func (s *Store) SaveTemplate(ctx context.Context, t domain.NotificationTemplate, create bool) (domain.NotificationTemplate, error) {

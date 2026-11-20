@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"event-driven-notification-system/internal/domain"
-	tpl "event-driven-notification-system/internal/template"
+	"net/http"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"net/http"
+
+	"event-driven-notification-system/internal/domain"
+	tpl "event-driven-notification-system/internal/template"
 )
 
 func (a *API) templateRoutes(r chi.Router) {

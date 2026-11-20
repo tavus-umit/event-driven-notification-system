@@ -2,11 +2,13 @@ package ratelimit
 
 import (
 	"context"
-	"event-driven-notification-system/internal/domain"
-	"event-driven-notification-system/internal/observe"
+	"time"
+
 	"github.com/google/uuid"
 	r "github.com/redis/go-redis/v9"
-	"time"
+
+	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/internal/observe"
 )
 
 const Capacity = 100

@@ -2,15 +2,17 @@ package config
 
 import (
 	"errors"
-	"event-driven-notification-system/internal/domain"
 	"fmt"
-	"github.com/joho/godotenv"
 	"log/slog"
 	"net"
 	"net/url"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
+
+	"event-driven-notification-system/internal/domain"
 )
 
 type Config struct {

@@ -1,10 +1,11 @@
 package worker
 
 import (
-	"event-driven-notification-system/internal/domain"
-	"event-driven-notification-system/internal/provider"
 	"testing"
 	"time"
+
+	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/internal/provider"
 )
 
 func TestRetryBudget(t *testing.T) {

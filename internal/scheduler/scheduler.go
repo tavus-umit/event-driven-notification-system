@@ -2,9 +2,10 @@ package scheduler
 
 import (
 	"context"
-	"event-driven-notification-system/internal/app"
 	"log/slog"
 	"time"
+
+	"event-driven-notification-system/internal/app"
 )
 
 // Tick reads the Redis due index. The guarded SQL transition writes the outbox;

@@ -3,8 +3,10 @@ package observe
 import (
 	"context"
 	"errors"
-	"event-driven-notification-system/internal/domain"
-	broker "event-driven-notification-system/internal/queue/redis"
+	"net/http"
+	"os"
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -15,9 +17,9 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdk "go.opentelemetry.io/otel/sdk/trace"
-	"net/http"
-	"os"
-	"time"
+
+	"event-driven-notification-system/internal/domain"
+	broker "event-driven-notification-system/internal/queue/redis"
 )
 
 var Depth = promauto.NewGaugeVec(prometheus.GaugeOpts{Name: "notifications_queue_depth", Help: "Ready notifications by channel and priority."}, []string{"channel", "priority"})
@@ -27,8 +29,12 @@ var Retries = promauto.NewCounterVec(prometheus.CounterOpts{Name: "notification_
 var DLQ = promauto.NewCounterVec(prometheus.CounterOpts{Name: "dlq_messages_total", Help: "Terminal provider failures."}, []string{"channel"})
 var Throttled = promauto.NewCounterVec(prometheus.CounterOpts{Name: "ratelimit_throttled_total", Help: "Admission checks deferred for channel capacity."}, []string{"channel"})
 
-func Metrics(b *broker.Broker) http.Handler {
-	h := promhttp.Handler()
+func Metrics(b *broker.Broker, collectors ...prometheus.Collector) http.Handler {
+	registry := prometheus.NewRegistry()
+	for _, c := range collectors {
+		registry.MustRegister(c)
+	}
+	h := promhttp.HandlerFor(prometheus.Gatherers{registry, prometheus.DefaultGatherer}, promhttp.HandlerOpts{})
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), 2*time.Second)
 		defer cancel()
@@ -40,7 +46,7 @@ func Metrics(b *broker.Broker) http.Handler {
 			}
 		}
 		if _, e := pipe.Exec(ctx); e != nil {
-			http.Error(w, "queue metrics unavailable", 503)
+			http.Error(w, "queue metrics unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		for k, c := range counts {

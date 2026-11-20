@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"time"
+
 	"event-driven-notification-system/internal/api"
 	"event-driven-notification-system/internal/app"
 	"event-driven-notification-system/internal/observe"
-	"net/http"
-	"time"
 )
 
 func main() { app.Main(run) }

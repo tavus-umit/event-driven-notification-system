@@ -92,7 +92,7 @@ Detailed engineering documentation and technical specifications are available in
 To start the API Server, Worker Pool, Mock Webhook Provider, PostgreSQL, Redis, and Prometheus in a single command:
 
 ```bash
-docker-compose up --build
+docker compose up -d --build --wait
 ```
 
 ### 2. Verify Health
@@ -165,3 +165,24 @@ make test
 # Or directly with Go:
 go test -v -race ./...
 ```
+
+### Service-backed tests
+
+Run `make test-integration` from a POSIX shell to start PostgreSQL and Redis and execute the entire race-enabled suite. The database login needs permission to create temporary test databases. Tests use Redis logical databases 7–15 on a development instance. The standalone `go test -v -race ./...` command runs the same integration cases when both `TEST_DATABASE_URL` and `TEST_REDIS_ADDR` are set. Without those settings, service-backed cases report SKIP.
+
+### Local operation
+
+The API runs on port 8080, the mock webhook on 8081, and Prometheus on 9090. Compose starts a scheduler and one worker pool for each channel. Each binary applies the embedded migrations at startup. Copy `.env.example` to `.env` to override defaults. Leave `PROVIDER_WEBHOOK_URL` unset to use the local mock. Set it to a reachable provider URL for external delivery.
+
+- Set `WORKERS_PER_CHANNEL` to change goroutine concurrency. The shared admission ceiling is 100 provider calls per rolling second per channel. Slow responses reduce achievable throughput.
+- Set `MOCK_FAILURE_STATUS=503` and optionally `MOCK_FAILURE_RECIPIENT` in Compose to exercise retries. A permanent response such as 422 exercises immediate DLQ routing.
+- Use `go run ./cmd/cli dlq list --channel sms` to inspect failures and `go run ./cmd/cli dlq replay --channel sms --limit 20 --priority high` to replay them. Replay preserves prior audit records.
+- Scrape `/metrics` on the API for queue depths, fleet-wide provider attempt counts and latency histograms. Prometheus also scrapes worker-local results, retry and throttling counters.
+- Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317` to export spans to a reachable OTLP/gRPC collector. Trace context propagates across ingestion, queue processing and the provider call.
+- Use `scheduledAt` for future delivery. Create a template with `POST /api/v1/templates`, then send `templateId`, `recipient` and `variables` in place of literal content. Status events stream at `ws://localhost:8080/api/v1/ws/notifications`, optionally filtered by `batch_id` or `channel`.
+
+### Delivery guarantees
+
+A 202 receipt confirms the PostgreSQL commit of both message data and dispatch instructions. Worker crashes and interrupted queue publishing are recoverable. If a provider accepts a POST and the worker crashes before recording the result, delivery can be attempted again. The stable notification ID is sent as `X-Idempotency-Key` on every provider attempt. External providers must honor that key to suppress duplicate side effects.
+
+The phase-by-phase implementation and test evidence is in [the engineering reports](./docs/reports/).

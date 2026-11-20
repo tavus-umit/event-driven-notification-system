@@ -1,0 +1,114 @@
+x-app-env: &app-env
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USER: notification_user
+  DB_PASSWORD: notification_secret
+  DB_NAME: notification_db
+  DB_SSLMODE: disable
+  REDIS_HOST: redis
+  PROVIDER_WEBHOOK_URL: ${PROVIDER_WEBHOOK_URL:-http://mock-provider:8081/webhook}
+  DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-50}
+  DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-25}
+  SERVER_READ_TIMEOUT: ${SERVER_READ_TIMEOUT:-10s}
+  SERVER_WRITE_TIMEOUT: ${SERVER_WRITE_TIMEOUT:-10s}
+  PROVIDER_TIMEOUT_SECONDS: ${PROVIDER_TIMEOUT_SECONDS:-5}
+  MAX_RETRIES: ${MAX_RETRIES:-3}
+  CIRCUIT_BREAKER_FAIL_THRESHOLD: ${CIRCUIT_BREAKER_FAIL_THRESHOLD:-5}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  WORKERS_PER_CHANNEL: ${WORKERS_PER_CHANNEL:-16}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+
+x-app: &app
+  restart: unless-stopped
+  environment: *app-env
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+x-worker: &worker
+  <<: *app
+  build: {context: ., target: worker}
+  stop_grace_period: 55s
+  healthcheck:
+    test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:9091/metrics"]
+    interval: 10s
+    timeout: 4s
+    retries: 5
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: notification_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: notification_user
+      POSTGRES_PASSWORD: notification_secret
+      POSTGRES_DB: notification_db
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification_user -d notification_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: notification_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always"]
+    ports: ["6379:6379"]
+    volumes: ["redisdata:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mock-provider:
+    build: {context: ., target: mock-provider}
+    restart: unless-stopped
+    ports: ["8081:8081"]
+    environment:
+      MOCK_FAILURE_STATUS: ${MOCK_FAILURE_STATUS:-}
+      MOCK_FAILURE_RECIPIENT: ${MOCK_FAILURE_RECIPIENT:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:8081/health"]
+      interval: 5s
+      timeout: 4s
+      retries: 5
+
+  api:
+    <<: *app
+    build: {context: ., target: api}
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:8080/ready"]
+      interval: 5s
+      timeout: 4s
+      retries: 5
+
+  worker-sms:
+    <<: *worker
+    environment: {<<: *app-env, WORKER_CHANNEL: sms}
+  worker-email:
+    <<: *worker
+    environment: {<<: *app-env, WORKER_CHANNEL: email}
+  worker-push:
+    <<: *worker
+    environment: {<<: *app-env, WORKER_CHANNEL: push}
+  scheduler:
+    <<: *app
+    build: {context: ., target: scheduler}
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    ports: ["9090:9090"]
+    volumes: ["./prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+
+volumes:
+  pgdata:
+  redisdata:

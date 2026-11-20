@@ -123,3 +123,9 @@ In addition to WFQ, an **Aging Engine** periodically inspects items in lower pri
 | **Low Priority Queue Delay** | $< 60.0\text{ s}$ | Priority aging elevates items |
 | **Per-Channel Throughput** | Exactly 100/sec | Token bucket sleep interval applied |
 | **Worker In-Flight Buffer** | $\le 200$ items | Pauses queue consumer fetching until in-flight clears |
+
+## Rolling-window enforcement in the implementation
+
+Redis TIME determines refill and expiry for all replicas. The Lua admission script combines the capacity-100 bucket with up to 100 outstanding dispatch reservations per channel. A reservation remains counted through one second after completion. A crashed worker retains its reservation for 90 seconds, longer than the configured provider deadline. This covers the interval between token acquisition and HTTP arrival. Observed throughput also depends on provider latency and worker concurrency.
+
+The [Phase 8 report](./reports/PHASE_8_REPORT.md) includes receiver timestamps from the 500-message burst and a second measurement using the running Compose stack.

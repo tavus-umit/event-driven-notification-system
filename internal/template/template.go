@@ -2,11 +2,12 @@ package template
 
 import (
 	"errors"
-	"event-driven-notification-system/internal/domain"
 	"fmt"
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"event-driven-notification-system/internal/domain"
 )
 
 var variable = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)

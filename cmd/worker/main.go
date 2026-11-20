@@ -2,16 +2,17 @@ package main
 
 import (
 	"context"
+	"log/slog"
+	"net/http"
+	"sync"
+	"time"
+
 	"event-driven-notification-system/internal/app"
 	"event-driven-notification-system/internal/domain"
 	"event-driven-notification-system/internal/observe"
 	"event-driven-notification-system/internal/provider"
 	"event-driven-notification-system/internal/ratelimit"
 	"event-driven-notification-system/internal/worker"
-	"log/slog"
-	"net/http"
-	"sync"
-	"time"
 )
 
 func main() { app.Main(run) }

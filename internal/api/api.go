@@ -4,22 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"event-driven-notification-system/internal/api/websocket"
-	"event-driven-notification-system/internal/app"
-	"event-driven-notification-system/internal/domain"
-	"event-driven-notification-system/internal/observe"
-	"event-driven-notification-system/pkg/logger"
 	"fmt"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/google/uuid"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 	"net/http"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+
+	"event-driven-notification-system/internal/api/websocket"
+	"event-driven-notification-system/internal/app"
+	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/internal/observe"
+	"event-driven-notification-system/pkg/logger"
 )
 
 type API struct{ S *app.Services }
@@ -31,7 +33,7 @@ func (a *API) Router(ctx context.Context) http.Handler {
 	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) { problem(w, r, 405, "method not allowed") })
 	r.Get("/health", a.health)
 	r.Get("/ready", a.health)
-	r.Handle("/metrics", observe.Metrics(a.S.Broker))
+	r.Handle("/metrics", observe.Metrics(a.S.Broker, observe.Totals{DB: a.S.Store.DB}))
 	h := websocket.New(ctx, a.S.Broker)
 	go h.Run()
 	r.Get("/api/v1/ws/notifications", h.ServeHTTP)
@@ -86,6 +88,8 @@ func problem(w http.ResponseWriter, r *http.Request, code int, detail string) {
 }
 func failure(w http.ResponseWriter, r *http.Request, e error) {
 	switch {
+	case errors.Is(e, domain.ErrInvalid):
+		problem(w, r, 400, e.Error())
 	case errors.Is(e, domain.ErrNotFound):
 		problem(w, r, 404, e.Error())
 	case errors.Is(e, domain.ErrConflict):

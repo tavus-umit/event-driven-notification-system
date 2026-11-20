@@ -223,3 +223,9 @@ For production systems generating over 10 million notifications per day:
    - Partial index on `scheduled_at WHERE status = 'SCHEDULED'` keeps the index size minuscule for the scheduler scanner.
 3. **Connection Pooling**:
    - Database connection pools must be configured with sensible bounds (e.g., `MaxOpenConns: 50`, `MaxIdleConns: 25`, `ConnMaxLifetime: 15m`) to prevent connection exhaustion during batch ingestion spikes.
+
+## Runtime migrations
+
+The application embeds the versioned migration files and runs them under the migrator lock on startup. Migration 2 adds the retry state, correlation and trace context, fenced processing leases, and the transactional dispatch outbox. Migration 3 preserves attempt numbering across DLQ replay. Migration 4 maintains bounded Prometheus aggregate counters alongside immutable delivery attempts. Migration 5 updates stored batch completion counters for terminal transitions and replays. Migration 6 routes newly inserted notifications through a statement-level trigger.
+
+The ingestion repository streams single requests and batches through pgx binary COPY on a connection borrowed from the bounded SQL pool. The batch header, all request receipts, notification rows and outbox entries commit together. The relay acknowledges outbox rows after pipelined Redis publication. See [the final verification report](./reports/PHASE_8_REPORT.md) for measured database statement and full transaction latency.

@@ -4,27 +4,32 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"time"
+
 	"event-driven-notification-system/internal/app"
 	"event-driven-notification-system/internal/domain"
 	broker "event-driven-notification-system/internal/queue/redis"
 	"event-driven-notification-system/internal/repository/postgres"
-	"flag"
-	"fmt"
-	"os"
-	"time"
 )
 
 func main() { app.Main(run) }
 func run(ctx context.Context, s *app.Services) error {
-	if len(os.Args) < 3 || os.Args[1] != "dlq" {
+	return execute(ctx, s, os.Args[1:], os.Stdout)
+}
+func execute(ctx context.Context, s *app.Services, args []string, out io.Writer) error {
+	if len(args) < 2 || args[0] != "dlq" {
 		return errors.New("usage: cli dlq list|replay --channel sms --limit 100 --priority high")
 	}
-	action := os.Args[2]
+	action := args[1]
 	fs := flag.NewFlagSet("dlq", flag.ContinueOnError)
 	channel := fs.String("channel", "sms", "notification channel")
 	limit := fs.Int("limit", 100, "number of entries")
 	priority := fs.String("priority", "high", "replay priority")
-	if e := fs.Parse(os.Args[3:]); e != nil {
+	if e := fs.Parse(args[2:]); e != nil {
 		return e
 	}
 	ch := domain.Channel(*channel)
@@ -39,7 +44,7 @@ func run(ctx context.Context, s *app.Services) error {
 	}
 	for _, raw := range entries {
 		if action == "list" {
-			fmt.Println(raw)
+			fmt.Fprintln(out, raw)
 			continue
 		}
 		var event postgres.Event
@@ -49,7 +54,10 @@ func run(ctx context.Context, s *app.Services) error {
 		if event.At.IsZero() {
 			return errors.New("missing failure timestamp")
 		}
-		res, e := s.Store.DB.ExecContext(ctx, `UPDATE notifications SET attempt_base=(SELECT coalesce(max(attempt_number),0) FROM delivery_attempts WHERE notification_id=$1),status='QUEUED',priority=$2,retry_count=0,error_message=NULL,due_at=NULL,updated_at=now() WHERE id=$1 AND channel=$3 AND status='FAILED' AND updated_at<=$4`, event.ID, p, ch, event.At.Add(time.Microsecond))
+		res, e := s.Store.DB.ExecContext(ctx, `UPDATE notifications SET
+ attempt_base=(SELECT coalesce(max(attempt_number),0) FROM delivery_attempts WHERE notification_id=$1),
+ status='QUEUED',priority=$2,retry_count=0,error_message=NULL,due_at=NULL,updated_at=now()
+ WHERE id=$1 AND channel=$3 AND status='FAILED' AND updated_at<=$4`, event.ID, p, ch, event.At.Add(time.Microsecond))
 		if e != nil {
 			return e
 		}
@@ -58,7 +66,7 @@ func run(ctx context.Context, s *app.Services) error {
 		}
 		n, _ := res.RowsAffected()
 		if n > 0 {
-			fmt.Println(event.ID)
+			fmt.Fprintln(out, event.ID)
 		}
 	}
 	return nil

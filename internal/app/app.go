@@ -3,17 +3,18 @@ package app
 import (
 	"context"
 	"errors"
-	"event-driven-notification-system/internal/config"
-	"event-driven-notification-system/internal/observe"
-	broker "event-driven-notification-system/internal/queue/redis"
-	"event-driven-notification-system/internal/repository/postgres"
-	"event-driven-notification-system/pkg/logger"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"event-driven-notification-system/internal/config"
+	"event-driven-notification-system/internal/observe"
+	broker "event-driven-notification-system/internal/queue/redis"
+	"event-driven-notification-system/internal/repository/postgres"
+	"event-driven-notification-system/pkg/logger"
 )
 
 type Services struct {

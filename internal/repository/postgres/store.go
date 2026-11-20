@@ -4,15 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"event-driven-notification-system/internal/config"
-	"event-driven-notification-system/internal/domain"
-	"event-driven-notification-system/migrations"
+	"time"
+
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"time"
+
+	"event-driven-notification-system/internal/config"
+	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/migrations"
 )
 
 type Store struct{ DB *sql.DB }
@@ -53,8 +55,14 @@ func dbError(e error) error {
 		return domain.ErrNotFound
 	}
 	var pg *pgconn.PgError
-	if errors.As(e, &pg) && pg.Code == "23505" {
+	if errors.As(e, &pg) && (pg.Code == "23505" || pg.Code == "23503") {
 		return domain.ErrConflict
+	}
+	if pg != nil {
+		switch pg.Code {
+		case "22021", "22P05", "22001", "22P02":
+			return domain.ErrInvalid
+		}
 	}
 	return e
 }

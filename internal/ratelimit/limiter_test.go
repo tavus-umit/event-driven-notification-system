@@ -2,11 +2,15 @@ package ratelimit
 
 import (
 	"context"
-	"event-driven-notification-system/internal/domain"
-	r "github.com/redis/go-redis/v9"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+
+	r "github.com/redis/go-redis/v9"
+
+	"event-driven-notification-system/internal/domain"
 )
 
 func TestBucket(t *testing.T) {
@@ -17,20 +21,25 @@ func TestBucket(t *testing.T) {
 	c := r.NewClient(&r.Options{Addr: addr, DB: 14})
 	defer c.Close()
 	ctx := context.Background()
-	ch := domain.Channel("bucket-test")
-	c.Del(ctx, "ratelimit:bucket-test", "ratelimit:bucket-test:window")
+	ch := domain.Channel(uuid.NewString())
+	key := "ratelimit:" + string(ch)
+	defer c.Del(ctx, key, key+":window")
+	var first *Permit
 	l := Limiter{c}
 	for i := 0; i < 100; i++ {
 		p, _, e := l.Try(ctx, ch)
 		if e != nil || p == nil {
 			t.Fatal(i, e)
 		}
-		if e = p.Done(ctx); e != nil {
-			t.Fatal(e)
+		if i == 0 {
+			first = p
 		}
 	}
 	if p, d, e := l.Try(ctx, ch); e != nil || p != nil || d <= 0 {
 		t.Fatal("ceiling", d, e)
+	}
+	if e := first.Done(ctx); e != nil {
+		t.Fatal(e)
 	}
 	time.Sleep(time.Second)
 	if p, _, e := l.Try(ctx, ch); e != nil || p == nil {

@@ -6,17 +6,19 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"event-driven-notification-system/internal/app"
-	"event-driven-notification-system/internal/domain"
-	"event-driven-notification-system/pkg/logger"
 	"fmt"
-	"github.com/google/uuid"
-	"go.opentelemetry.io/otel/propagation"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/propagation"
+
+	"event-driven-notification-system/internal/app"
+	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/pkg/logger"
 )
 
 type CreateRequest struct {
@@ -53,12 +55,23 @@ func decode(w http.ResponseWriter, r *http.Request, maxBytes int64, v any) error
 	}
 	return nil
 }
+func requestHash(path string, req batchRequest) string {
+	if len(req.Items) == 1 && path == "/api/v1/notifications" {
+		one := req.Items[0]
+		one.Key = ""
+		req.Items = []CreateRequest{one}
+	}
+	payload, _ := json.Marshal(req)
+	return fmt.Sprintf("%x", sha256.Sum256(append([]byte(path+"\n"), payload...)))
+}
 func (a *API) create(w http.ResponseWriter, r *http.Request) {
 	batch := strings.HasSuffix(r.URL.Path, "/batch")
 	var req batchRequest
 	key := r.Header.Get("X-Idempotency-Key")
 	if batch {
-		if e := decode(w, r, 1<<30, &req); e != nil {
+		var e error
+		req, e = readBatch(w, r)
+		if e != nil {
 			problem(w, r, 400, e.Error())
 			return
 		}
@@ -93,8 +106,7 @@ func (a *API) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var receipt *domain.Receipt
 	if key != "" {
-		payload, _ := json.Marshal(req)
-		receipt = &domain.Receipt{Key: key, Hash: fmt.Sprintf("%x", sha256.Sum256(append([]byte(r.URL.Path+"\n"), payload...))), Code: 202}
+		receipt = &domain.Receipt{Key: key, Hash: requestHash(r.URL.Path, req), Code: 202}
 		release, done := a.guard(w, r, receipt)
 		if done {
 			return
@@ -115,8 +127,17 @@ func (a *API) create(w http.ResponseWriter, r *http.Request) {
 	ids := make([]string, len(ns))
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)
+	usedKeys := map[string]bool{key: true}
 	templates := map[string]domain.NotificationTemplate{}
 	for i, item := range req.Items {
+		original := item
+		if batch && item.Key != "" {
+			if len(item.Key) > 256 || strings.ContainsRune(item.Key, 0) || usedKeys[item.Key] {
+				problem(w, r, 400, "invalid or repeated batch item idempotency key")
+				return
+			}
+			usedKeys[item.Key] = true
+		}
 		if e := a.render(ctx, &item, templates); e != nil {
 			var invalid invalidTemplate
 			if errors.As(e, &invalid) {
@@ -136,10 +157,22 @@ func (a *API) create(w http.ResponseWriter, r *http.Request) {
 		}
 		id := uuid.NewString()
 		ids[i] = id
-		n := domain.Notification{Summary: domain.Summary{ID: id, Channel: item.Channel, Recipient: item.Recipient, Priority: p, Status: st, CreatedAt: now}, BatchID: req.ID, TemplateID: item.TemplateID, Content: item.Content, MaxRetries: a.S.Config.MaxRetries, ScheduledAt: item.Scheduled, Metadata: item.Metadata, UpdatedAt: now, CorrelationID: logger.ID(ctx), Traceparent: carrier.Get("traceparent"), IdempotencyKey: item.Key}
+		n := domain.Notification{
+			Summary: domain.Summary{ID: id, Channel: item.Channel, Recipient: item.Recipient, Priority: p, Status: st, CreatedAt: now},
+			BatchID: req.ID, TemplateID: item.TemplateID, Content: item.Content,
+			MaxRetries: a.S.Config.MaxRetries, ScheduledAt: item.Scheduled, Metadata: item.Metadata,
+			UpdatedAt: now, CorrelationID: logger.ID(ctx), Traceparent: carrier.Get("traceparent"), IdempotencyKey: item.Key,
+		}
 		if e := n.Validate(); e != nil {
 			problem(w, r, 400, fmt.Sprintf("item %d: %s", i+1, e))
 			return
+		}
+		if batch && item.Key != "" {
+			body, _ := json.Marshal(n.Summary)
+			n.Receipt = &domain.Receipt{Key: item.Key, Hash: requestHash("/api/v1/notifications", batchRequest{Items: []CreateRequest{original}}), Code: 202, Body: body}
+		}
+		if !batch {
+			n.IdempotencyKey = key
 		}
 		ns[i] = n
 	}

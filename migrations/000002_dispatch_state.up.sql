@@ -21,3 +21,11 @@ BEGIN
  RETURN NEW;
 END $$;
 CREATE TRIGGER notifications_dispatch AFTER INSERT OR UPDATE OF status ON notifications FOR EACH ROW EXECUTE FUNCTION notification_transition();
+
+-- Route active records when upgrading a database already populated at version 1.
+UPDATE notifications SET correlation_id=uuid_generate_v4()::text WHERE correlation_id='';
+INSERT INTO notification_outbox(notification_id,batch_id,channel,priority,recipient,previous_status,current_status,due_at,retry_count,reason,correlation_id,traceparent)
+ SELECT id,batch_id,channel,priority,recipient,'PENDING',status::text,scheduled_at,retry_count,'',correlation_id,traceparent
+ FROM notifications WHERE status IN ('QUEUED','SCHEDULED');
+UPDATE notifications SET status=CASE WHEN scheduled_at>now() THEN 'SCHEDULED'::notification_status ELSE 'QUEUED'::notification_status END,
+ updated_at=now() WHERE status IN ('PENDING','PROCESSING');

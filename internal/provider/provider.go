@@ -5,18 +5,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"event-driven-notification-system/internal/domain"
-	"event-driven-notification-system/pkg/logger"
 	"fmt"
-	"github.com/sony/gobreaker"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 	"io"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/sony/gobreaker"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+
+	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/pkg/logger"
 )
 
 type Payload struct {
@@ -44,14 +46,17 @@ type Client struct {
 func New(url string, timeout time.Duration, channel domain.Channel, threshold int) *Client {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.MaxIdleConnsPerHost = 100
-	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{Name: string(channel), Interval: 10 * time.Second, Timeout: 30 * time.Second, MaxRequests: 3,
+	cb := gobreaker.NewCircuitBreaker(breakerSettings(channel, threshold))
+	return &Client{url, &http.Client{Transport: tr, Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, cb}
+}
+func breakerSettings(channel domain.Channel, threshold int) gobreaker.Settings {
+	return gobreaker.Settings{Name: string(channel), Interval: 10 * time.Second, Timeout: 30 * time.Second, MaxRequests: 3,
 		ReadyToTrip: func(c gobreaker.Counts) bool {
 			return int(c.ConsecutiveFailures) >= threshold || (c.Requests >= 10 && c.TotalFailures*2 >= c.Requests)
 		},
 		OnStateChange: func(name string, from, to gobreaker.State) {
 			slog.Info("provider circuit changed", "channel", name, "from", from.String(), "to", to.String())
-		}})
-	return &Client{url, &http.Client{Transport: tr, Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, cb}
+		}}
 }
 func (c *Client) Deliver(ctx context.Context, n domain.Notification) Result {
 	ctx, span := otel.Tracer("notification/provider").Start(ctx, "provider POST")

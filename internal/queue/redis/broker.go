@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"event-driven-notification-system/internal/domain"
-	"event-driven-notification-system/internal/repository/postgres"
 	"fmt"
+	"time"
+
 	"github.com/google/uuid"
 	r "github.com/redis/go-redis/v9"
-	"time"
+
+	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/internal/repository/postgres"
 )
 
 const Topic = "events:notification_status"
@@ -22,9 +24,11 @@ func New(addr, password string, db int) *Broker {
 func Key(c domain.Channel, tier string) string { return "queue:" + string(c) + ":" + tier }
 
 type Job struct {
-	ID       string `json:"id"`
-	Retry    int    `json:"retry"`
-	Enqueued int64  `json:"enqueued"`
+	Correlation string `json:"correlationId,omitempty"`
+	Trace       string `json:"traceparent,omitempty"`
+	ID          string `json:"id"`
+	Retry       int    `json:"retry"`
+	Enqueued    int64  `json:"enqueued"`
 }
 type Lease struct {
 	Job         Job
@@ -56,7 +60,7 @@ func (b *Broker) Publish(ctx context.Context, events []postgres.Event) error {
 		if e != nil {
 			return e
 		}
-		job, e := json.Marshal(Job{v.ID, v.Retry, time.Now().UnixMilli()})
+		job, e := json.Marshal(Job{ID: v.ID, Retry: v.Retry, Enqueued: time.Now().UnixMilli(), Correlation: v.Correlation, Trace: v.Trace})
 		if e != nil {
 			return e
 		}

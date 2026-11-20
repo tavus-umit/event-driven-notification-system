@@ -3,13 +3,15 @@ package redis
 import (
 	"context"
 	"encoding/json"
-	"event-driven-notification-system/internal/domain"
-	"event-driven-notification-system/internal/repository/postgres"
-	"github.com/google/uuid"
-	r "github.com/redis/go-redis/v9"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+	r "github.com/redis/go-redis/v9"
+
+	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/internal/repository/postgres"
 )
 
 func TestFairnessAndAging(t *testing.T) {

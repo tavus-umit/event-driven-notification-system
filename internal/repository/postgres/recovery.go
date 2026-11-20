@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+
 	"event-driven-notification-system/internal/domain"
 )
 

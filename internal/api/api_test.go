@@ -3,10 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"event-driven-notification-system/internal/domain"
-	"event-driven-notification-system/internal/testutil"
-	"github.com/google/uuid"
-	ws "github.com/gorilla/websocket"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +10,12 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+	ws "github.com/gorilla/websocket"
+
+	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/internal/testutil"
 )
 
 func TestAPIReplayAndStream(t *testing.T) {

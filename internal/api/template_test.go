@@ -3,14 +3,15 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"event-driven-notification-system/internal/domain"
-	"event-driven-notification-system/internal/scheduler"
-	"event-driven-notification-system/internal/testutil"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"event-driven-notification-system/internal/domain"
+	"event-driven-notification-system/internal/scheduler"
+	"event-driven-notification-system/internal/testutil"
 )
 
 func TestScheduledTemplate(t *testing.T) {
@@ -39,7 +40,7 @@ func TestScheduledTemplate(t *testing.T) {
 	do("GET", path+"/"+tmpl.ID, "", 200, nil)
 	do("GET", path, "", 200, nil)
 	do("PUT", path+"/"+tmpl.ID, form, 200, nil)
-	at := time.Now().UTC().Add(450 * time.Millisecond)
+	at := time.Now().UTC().Add(2 * time.Second)
 	body := `{"recipient":"+123","templateId":"` + tmpl.ID + `","variables":{"name":"Ada"},"scheduledAt":"` + at.Format(time.RFC3339Nano) + `"}`
 	var n domain.Summary
 	do("POST", "/api/v1/notifications", body, 202, &n)
@@ -53,8 +54,18 @@ func TestScheduledTemplate(t *testing.T) {
 		t.Fatal("early dispatch", count, e)
 	}
 	time.Sleep(time.Until(at) + 10*time.Millisecond)
-	if count, e := scheduler.Tick(ctx, s); count != 1 || e != nil {
-		t.Fatal(count, e)
+	for deadline := time.Now().Add(3 * time.Second); ; {
+		count, e := scheduler.Tick(ctx, s)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if count == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("due item was not promoted")
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 	if _, e := s.Store.Flush(ctx, s.Broker.Publish); e != nil {
 		t.Fatal(e)

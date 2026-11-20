@@ -50,6 +50,7 @@ func (s Status) Valid() bool {
 	return false
 }
 
+var ErrInvalid = errors.New("invalid request data")
 var ErrConflict = errors.New("state or idempotency conflict")
 var ErrNotFound = errors.New("resource not found")
 
@@ -62,7 +63,8 @@ type Summary struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 type Notification struct {
-	AttemptBase int `json:"-"`
+	Receipt     *Receipt `json:"-"`
+	AttemptBase int      `json:"-"`
 	Summary
 	BatchID           string                     `json:"batchId,omitempty"`
 	Content           string                     `json:"content"`

@@ -5,64 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"event-driven-notification-system/internal/domain"
 	"fmt"
 	"strings"
 	"time"
+
+	"event-driven-notification-system/internal/domain"
 )
 
-type insertRow struct {
-	ID, Batch, Channel, Recipient, Content, Priority, Status, Key, Template, Correlation, Trace string
-	Retries                                                                                     int
-	Scheduled                                                                                   *time.Time
-	Created                                                                                     time.Time
-	Metadata                                                                                    map[string]json.RawMessage
-}
-
-func (s *Store) Ingest(ctx context.Context, ns []domain.Notification, receipt *domain.Receipt) error {
-	if len(ns) == 0 || len(ns) > 1000 {
-		return errors.New("expected 1..1000 notifications")
-	}
-	tx, e := s.DB.BeginTx(ctx, nil)
-	if e != nil {
-		return e
-	}
-	defer tx.Rollback()
-	if receipt != nil {
-		r := receipt
-		res, e := tx.ExecContext(ctx, `INSERT INTO idempotency_keys(key,request_hash,response_status,response_body,expires_at) VALUES($1,$2,$3,$4,now()+interval '24 hours')
- ON CONFLICT(key) DO UPDATE SET request_hash=excluded.request_hash,response_status=excluded.response_status,response_body=excluded.response_body,created_at=now(),expires_at=excluded.expires_at WHERE idempotency_keys.expires_at<=now()`, r.Key, r.Hash, r.Code, r.Body)
-		if e != nil {
-			return dbError(e)
-		}
-		n, _ := res.RowsAffected()
-		if n == 0 {
-			return domain.ErrConflict
-		}
-	}
-	first := ns[0]
-	if first.BatchID != "" {
-		_, e = tx.ExecContext(ctx, "INSERT INTO notification_batches(id,total_count,created_at) VALUES($1,$2,$3)", first.BatchID, len(ns), first.CreatedAt)
-		if e != nil {
-			return dbError(e)
-		}
-	}
-	rows := make([]insertRow, len(ns))
-	for i, n := range ns {
-		rows[i] = insertRow{n.ID, n.BatchID, string(n.Channel), n.Recipient, n.Content, string(n.Priority), string(n.Status), n.IdempotencyKey, n.TemplateID, n.CorrelationID, n.Traceparent, n.MaxRetries, n.ScheduledAt, n.CreatedAt, n.Metadata}
-	}
-	data, e := json.Marshal(rows)
-	if e != nil {
-		return e
-	}
-	_, e = tx.ExecContext(ctx, `INSERT INTO notifications(id,batch_id,channel,recipient,content,priority,status,idempotency_key,template_id,correlation_id,traceparent,max_retries,scheduled_at,created_at,updated_at,metadata)
- SELECT "ID",nullif("Batch",'')::uuid,"Channel","Recipient","Content","Priority","Status",nullif("Key",''),nullif("Template",'')::uuid,"Correlation","Trace","Retries","Scheduled","Created","Created",coalesce("Metadata",'{}')
- FROM jsonb_to_recordset($1::jsonb) AS x("ID" uuid,"Batch" text,"Channel" channel_type,"Recipient" text,"Content" text,"Priority" priority_type,"Status" notification_status,"Key" text,"Template" text,"Correlation" text,"Trace" text,"Retries" int,"Scheduled" timestamptz,"Created" timestamptz,"Metadata" jsonb)`, data)
-	if e != nil {
-		return dbError(e)
-	}
-	return tx.Commit()
-}
 func (s *Store) Receipt(ctx context.Context, key string) (domain.Receipt, error) {
 	var r domain.Receipt
 	r.Key = key
@@ -84,14 +33,27 @@ func scanNotification(row scanner) (domain.Notification, error) {
 	return n, dbError(e)
 }
 func (s *Store) Get(ctx context.Context, id string) (domain.Notification, error) {
-	n, e := scanNotification(s.DB.QueryRowContext(ctx, "SELECT "+columns+" FROM notifications WHERE id=$1", id))
+	tx, e := s.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	if e != nil {
+		return domain.Notification{}, e
+	}
+	defer tx.Rollback()
+	n, e := scanNotification(tx.QueryRowContext(ctx, "SELECT "+columns+" FROM notifications WHERE id=$1", id))
 	if e == nil {
-		n.Attempts, e = s.Attempts(ctx, id)
+		n.Attempts, e = readAttempts(ctx, tx, id)
 	}
 	return n, e
 }
 func (s *Store) Attempts(ctx context.Context, id string) ([]domain.DeliveryAttempt, error) {
-	rows, e := s.DB.QueryContext(ctx, `SELECT attempt_number,status,coalesce(http_status_code,0),coalesce(response_body,''),coalesce(error_reason,''),duration_ms,attempted_at FROM delivery_attempts WHERE notification_id=$1 ORDER BY attempt_number,attempted_at`, id)
+	return readAttempts(ctx, s.DB, id)
+}
+
+type attemptReader interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func readAttempts(ctx context.Context, reader attemptReader, id string) ([]domain.DeliveryAttempt, error) {
+	rows, e := reader.QueryContext(ctx, `SELECT attempt_number,status,coalesce(http_status_code,0),coalesce(response_body,''),coalesce(error_reason,''),duration_ms,attempted_at FROM delivery_attempts WHERE notification_id=$1 ORDER BY attempt_number,attempted_at`, id)
 	if e != nil {
 		return nil, e
 	}
@@ -198,6 +160,9 @@ func (s *Store) Batch(ctx context.Context, id string) (domain.NotificationBatch,
 	b.Status = "PROCESSING"
 	if done == b.Total {
 		b.Status = "COMPLETED"
+		if b.Breakdown["failed"] > 0 {
+			b.Status = "PARTIALLY_FAILED"
+		}
 	}
 	return b, nil
 }

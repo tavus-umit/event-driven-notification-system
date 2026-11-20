@@ -2,26 +2,34 @@ package postgres
 
 import (
 	"context"
-	"event-driven-notification-system/internal/domain"
+	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel"
+
+	"event-driven-notification-system/internal/domain"
 )
 
 type Event struct {
-	Seq         int64           `json:"sequence"`
-	ID          string          `json:"notificationId"`
-	BatchID     string          `json:"batchId,omitempty"`
-	Channel     domain.Channel  `json:"channel"`
-	Priority    domain.Priority `json:"priority"`
-	Recipient   string          `json:"recipient"`
-	Previous    domain.Status   `json:"previousStatus"`
-	Current     domain.Status   `json:"currentStatus"`
-	Due         *time.Time      `json:"dueAt,omitempty"`
-	Retry       int             `json:"retryCount"`
-	Reason      string          `json:"reason,omitempty"`
-	Correlation string          `json:"correlationId"`
-	Trace       string          `json:"traceparent,omitempty"`
-	At          time.Time       `json:"timestamp"`
-	Type        string          `json:"event"`
+	LastHTTPStatus int             `json:"lastErrorCode,omitempty"`
+	LastResponse   string          `json:"lastErrorResponse,omitempty"`
+	TotalAttempts  int             `json:"totalAttempts,omitempty"`
+	TerminalReason string          `json:"terminalReason,omitempty"`
+	Seq            int64           `json:"sequence"`
+	ID             string          `json:"notificationId"`
+	BatchID        string          `json:"batchId,omitempty"`
+	Channel        domain.Channel  `json:"channel"`
+	Priority       domain.Priority `json:"priority"`
+	Recipient      string          `json:"recipient"`
+	Previous       domain.Status   `json:"previousStatus"`
+	Current        domain.Status   `json:"currentStatus"`
+	Due            *time.Time      `json:"dueAt,omitempty"`
+	Retry          int             `json:"retryCount"`
+	Reason         string          `json:"reason,omitempty"`
+	Correlation    string          `json:"correlationId"`
+	Trace          string          `json:"traceparent,omitempty"`
+	At             time.Time       `json:"timestamp"`
+	Type           string          `json:"event"`
 }
 
 func (s *Store) Flush(ctx context.Context, publish func(context.Context, []Event) error) (int, error) {
@@ -34,7 +42,15 @@ func (s *Store) Flush(ctx context.Context, publish func(context.Context, []Event
 	if e = tx.QueryRowContext(ctx, "SELECT pg_try_advisory_xact_lock(784031910)").Scan(&locked); e != nil || !locked {
 		return 0, e
 	}
-	rows, e := tx.QueryContext(ctx, `SELECT seq,notification_id,coalesce(batch_id::text,''),channel,priority,recipient,previous_status,current_status,due_at,retry_count,reason,correlation_id,traceparent,created_at FROM notification_outbox ORDER BY seq LIMIT 1000 FOR UPDATE SKIP LOCKED`)
+	rows, e := tx.QueryContext(ctx, `SELECT o.seq,o.notification_id,coalesce(o.batch_id::text,''),o.channel,o.priority,o.recipient,o.previous_status,o.current_status,o.due_at,o.retry_count,o.reason,o.correlation_id,o.traceparent,o.created_at,
+ coalesce(a.attempt_number,0),coalesce(a.http_status_code,0),coalesce(a.response_body,'')
+ FROM notification_outbox o
+ LEFT JOIN LATERAL (
+   SELECT attempt_number,http_status_code,response_body FROM delivery_attempts
+   WHERE notification_id=o.notification_id AND o.current_status='FAILED'
+   ORDER BY attempt_number DESC LIMIT 1
+ ) a ON true
+ ORDER BY o.seq LIMIT 1000 FOR UPDATE OF o SKIP LOCKED`)
 	if e != nil {
 		return 0, e
 	}
@@ -44,8 +60,18 @@ func (s *Store) Flush(ctx context.Context, publish func(context.Context, []Event
 	for rows.Next() {
 		var v Event
 		v.Type = "NOTIFICATION_STATUS_CHANGED"
-		if e = rows.Scan(&v.Seq, &v.ID, &v.BatchID, &v.Channel, &v.Priority, &v.Recipient, &v.Previous, &v.Current, &v.Due, &v.Retry, &v.Reason, &v.Correlation, &v.Trace, &v.At); e != nil {
+		if e = rows.Scan(&v.Seq, &v.ID, &v.BatchID, &v.Channel, &v.Priority, &v.Recipient, &v.Previous, &v.Current, &v.Due, &v.Retry, &v.Reason, &v.Correlation, &v.Trace, &v.At, &v.TotalAttempts, &v.LastHTTPStatus, &v.LastResponse); e != nil {
 			return 0, e
+		}
+		if v.Current == domain.Failed {
+			switch {
+			case v.TotalAttempts == 0 || strings.HasPrefix(v.Reason, "processing panic"):
+				v.TerminalReason = "POISON_PILL"
+			case v.LastHTTPStatus == 0 || v.LastHTTPStatus == 202 || v.LastHTTPStatus == 408 || v.LastHTTPStatus == 429 || v.LastHTTPStatus >= 500:
+				v.TerminalReason = "MAX_RETRIES_EXCEEDED"
+			default:
+				v.TerminalReason = "NON_RETRYABLE_ERROR"
+			}
 		}
 		events = append(events, v)
 		ids = append(ids, v.Seq)
@@ -65,12 +91,17 @@ func (s *Store) Claim(ctx context.Context, id, owner string, channel domain.Chan
 	return scanNotification(s.DB.QueryRowContext(ctx, `UPDATE notifications SET status='PROCESSING',claim_id=$2,lease_until=now()+interval '90 seconds',updated_at=now() WHERE id=$1 AND channel=$3 AND status='QUEUED' AND retry_count=$4 RETURNING `+columns, id, owner, channel, retry))
 }
 func (s *Store) Finish(ctx context.Context, id, owner string, a domain.DeliveryAttempt, status domain.Status, message string, due *time.Time) error {
+	ctx, span := otel.Tracer("notification/postgres").Start(ctx, "commit delivery result")
+	defer span.End()
 	tx, e := s.DB.BeginTx(ctx, nil)
 	if e != nil {
 		return e
 	}
 	defer tx.Rollback()
-	res, e := tx.ExecContext(ctx, `UPDATE notifications SET status=$3::notification_status,provider_message_id=nullif($4,''),error_message=nullif($5,''),retry_count=retry_count+CASE WHEN $3::notification_status='RETRY_PENDING' THEN 1 ELSE 0 END,due_at=$6,claim_id=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND claim_id=$2 AND status='PROCESSING'`, id, owner, status, message, a.Error, due)
+	res, e := tx.ExecContext(ctx, `UPDATE notifications SET status=$3::notification_status, provider_message_id=nullif($4,''), error_message=nullif($5,''),
+ retry_count=retry_count+CASE WHEN $3::notification_status='RETRY_PENDING' THEN 1 ELSE 0 END,
+ due_at=$6, claim_id=NULL, lease_until=NULL, updated_at=now()
+ WHERE id=$1 AND claim_id=$2 AND status='PROCESSING'`, id, owner, status, message, a.Error, due)
 	if e != nil {
 		return e
 	}

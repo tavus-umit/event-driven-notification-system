@@ -4,18 +4,20 @@ package testutil
 import (
 	"context"
 	"database/sql"
-	"event-driven-notification-system/internal/app"
-	"event-driven-notification-system/internal/config"
-	broker "event-driven-notification-system/internal/queue/redis"
-	"event-driven-notification-system/internal/repository/postgres"
-	"github.com/google/uuid"
 	"net/url"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
+
+	"event-driven-notification-system/internal/app"
+	"event-driven-notification-system/internal/config"
+	broker "event-driven-notification-system/internal/queue/redis"
+	"event-driven-notification-system/internal/repository/postgres"
 )
 
-func Services(t *testing.T, redisDB int) *app.Services {
+func Services(t testing.TB, redisDB int) *app.Services {
 	t.Helper()
 	dsn, addr := os.Getenv("TEST_DATABASE_URL"), os.Getenv("TEST_REDIS_ADDR")
 	if dsn == "" || addr == "" {

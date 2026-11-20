@@ -3,6 +3,16 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
+	"runtime/debug"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+
 	"event-driven-notification-system/internal/app"
 	"event-driven-notification-system/internal/domain"
 	"event-driven-notification-system/internal/observe"
@@ -10,14 +20,6 @@ import (
 	broker "event-driven-notification-system/internal/queue/redis"
 	"event-driven-notification-system/internal/ratelimit"
 	"event-driven-notification-system/pkg/logger"
-	"fmt"
-	"github.com/google/uuid"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
-	"log/slog"
-	"runtime/debug"
-	"sync"
-	"time"
 )
 
 type Sender interface {
@@ -56,10 +58,11 @@ func (p *Pool) Run(ctx context.Context, workers int) {
 func (p *Pool) process(parent context.Context, l *broker.Lease, parseErr error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 45*time.Second)
 	defer cancel()
+	ctx = logger.WithID(ctx, l.Job.Correlation)
 	owner := uuid.NewString()
 	defer func() {
 		if v := recover(); v != nil {
-			slog.Error("worker panic", "notification_id", l.Job.ID, "channel", p.Channel, "stack", string(debug.Stack()))
+			logger.From(ctx).Error("worker panic", "notification_id", l.Job.ID, "channel", p.Channel, "stack", string(debug.Stack()))
 			p.quarantine(ctx, l, owner, fmt.Sprintf("processing panic: %v", v))
 		}
 	}()
@@ -68,7 +71,7 @@ func (p *Pool) process(parent context.Context, l *broker.Lease, parseErr error) 
 		return
 	}
 	if e := p.handle(ctx, l, owner); e != nil {
-		slog.Error("delivery lease retained", "channel", p.Channel, "notification_id", l.Job.ID, "error", e)
+		logger.From(ctx).Error("delivery lease retained", "channel", p.Channel, "notification_id", l.Job.ID, "error", e)
 		return
 	}
 	if e := p.Service.Broker.Ack(ctx, p.Channel, l); e != nil {

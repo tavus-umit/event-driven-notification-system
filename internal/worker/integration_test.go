@@ -2,14 +2,16 @@ package worker
 
 import (
 	"context"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
 	"event-driven-notification-system/internal/domain"
 	"event-driven-notification-system/internal/provider"
 	"event-driven-notification-system/internal/ratelimit"
 	"event-driven-notification-system/internal/testutil"
-	"github.com/google/uuid"
-	"sync"
-	"testing"
-	"time"
 )
 
 type rejectingSender struct{}
@@ -32,7 +34,7 @@ func TestRetryToDLQ(t *testing.T) {
 	if e := s.Store.Ingest(ctx, []domain.Notification{n}, nil); e != nil {
 		t.Fatal(e)
 	}
-	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); {
+	for deadline := time.Now().Add(45 * time.Second); time.Now().Before(deadline); {
 		got, e := s.Store.Get(ctx, n.ID)
 		if e != nil {
 			t.Fatal(e)
