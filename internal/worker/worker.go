@@ -129,7 +129,7 @@ func (p *Pool) handle(ctx context.Context, l *broker.Lease, owner string) error 
 	return e
 }
 func outcome(n domain.Notification, r provider.Result, started time.Time) (domain.DeliveryAttempt, domain.Status, *time.Time) {
-	a := domain.DeliveryAttempt{Number: n.RetryCount + 1, Status: "FAILURE", HTTPStatus: r.Code, Body: r.Body, Error: r.Reason, DurationMS: time.Since(started).Milliseconds(), At: started.UTC()}
+	a := domain.DeliveryAttempt{Number: n.AttemptBase + n.RetryCount + 1, Status: "FAILURE", HTTPStatus: r.Code, Body: r.Body, Error: r.Reason, DurationMS: time.Since(started).Milliseconds(), At: started.UTC()}
 	if r.MessageID != "" {
 		a.Status = "SUCCESS"
 		return a, domain.Delivered, nil

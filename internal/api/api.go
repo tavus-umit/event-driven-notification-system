@@ -42,6 +42,7 @@ func (a *API) Router(ctx context.Context) http.Handler {
 	r.Get(base+"/{id}", a.detail)
 	r.Get(base+"/batches/{id}", a.batch)
 	r.Post(base+"/{id}/cancel", a.cancel)
+	a.templateRoutes(r)
 	return r
 }
 func requestContext(next http.Handler) http.Handler {

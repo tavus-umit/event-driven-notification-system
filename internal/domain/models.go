@@ -62,6 +62,7 @@ type Summary struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 type Notification struct {
+	AttemptBase int `json:"-"`
 	Summary
 	BatchID           string                     `json:"batchId,omitempty"`
 	Content           string                     `json:"content"`

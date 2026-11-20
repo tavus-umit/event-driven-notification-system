@@ -70,14 +70,14 @@ func (s *Store) Receipt(ctx context.Context, key string) (domain.Receipt, error)
 	return r, dbError(e)
 }
 
-const columns = `id,channel,recipient,priority,status,created_at,coalesce(batch_id::text,''),content,retry_count,max_retries,coalesce(provider_message_id,''),coalesce(error_message,''),updated_at,scheduled_at,coalesce(template_id::text,''),metadata,correlation_id,traceparent`
+const columns = `id,channel,recipient,priority,status,created_at,coalesce(batch_id::text,''),content,retry_count,max_retries,coalesce(provider_message_id,''),coalesce(error_message,''),updated_at,scheduled_at,coalesce(template_id::text,''),metadata,correlation_id,traceparent,attempt_base`
 
 type scanner interface{ Scan(...any) error }
 
 func scanNotification(row scanner) (domain.Notification, error) {
 	var n domain.Notification
 	var meta []byte
-	e := row.Scan(&n.ID, &n.Channel, &n.Recipient, &n.Priority, &n.Status, &n.CreatedAt, &n.BatchID, &n.Content, &n.RetryCount, &n.MaxRetries, &n.ProviderMessageID, &n.ErrorMessage, &n.UpdatedAt, &n.ScheduledAt, &n.TemplateID, &meta, &n.CorrelationID, &n.Traceparent)
+	e := row.Scan(&n.ID, &n.Channel, &n.Recipient, &n.Priority, &n.Status, &n.CreatedAt, &n.BatchID, &n.Content, &n.RetryCount, &n.MaxRetries, &n.ProviderMessageID, &n.ErrorMessage, &n.UpdatedAt, &n.ScheduledAt, &n.TemplateID, &meta, &n.CorrelationID, &n.Traceparent, &n.AttemptBase)
 	if e == nil && len(meta) > 0 {
 		e = json.Unmarshal(meta, &n.Metadata)
 	}

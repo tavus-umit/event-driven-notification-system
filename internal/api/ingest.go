@@ -20,13 +20,15 @@ import (
 )
 
 type CreateRequest struct {
-	Recipient string                     `json:"recipient"`
-	Channel   domain.Channel             `json:"channel"`
-	Content   string                     `json:"content"`
-	Priority  domain.Priority            `json:"priority"`
-	Key       string                     `json:"idempotencyKey,omitempty"`
-	Scheduled *time.Time                 `json:"scheduledAt,omitempty"`
-	Metadata  map[string]json.RawMessage `json:"metadata,omitempty"`
+	TemplateID string                     `json:"templateId,omitempty"`
+	Variables  map[string]string          `json:"variables,omitempty"`
+	Recipient  string                     `json:"recipient"`
+	Channel    domain.Channel             `json:"channel"`
+	Content    string                     `json:"content"`
+	Priority   domain.Priority            `json:"priority"`
+	Key        string                     `json:"idempotencyKey,omitempty"`
+	Scheduled  *time.Time                 `json:"scheduledAt,omitempty"`
+	Metadata   map[string]json.RawMessage `json:"metadata,omitempty"`
 }
 type batchRequest struct {
 	ID    string          `json:"batchId,omitempty"`
@@ -113,7 +115,17 @@ func (a *API) create(w http.ResponseWriter, r *http.Request) {
 	ids := make([]string, len(ns))
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)
+	templates := map[string]domain.NotificationTemplate{}
 	for i, item := range req.Items {
+		if e := a.render(ctx, &item, templates); e != nil {
+			var invalid invalidTemplate
+			if errors.As(e, &invalid) {
+				problem(w, r, 400, e.Error())
+			} else {
+				failure(w, r, e)
+			}
+			return
+		}
 		p := item.Priority
 		if p == "" {
 			p = domain.Normal
@@ -124,7 +136,7 @@ func (a *API) create(w http.ResponseWriter, r *http.Request) {
 		}
 		id := uuid.NewString()
 		ids[i] = id
-		n := domain.Notification{Summary: domain.Summary{ID: id, Channel: item.Channel, Recipient: item.Recipient, Priority: p, Status: st, CreatedAt: now}, BatchID: req.ID, Content: item.Content, MaxRetries: a.S.Config.MaxRetries, ScheduledAt: item.Scheduled, Metadata: item.Metadata, UpdatedAt: now, CorrelationID: logger.ID(ctx), Traceparent: carrier.Get("traceparent"), IdempotencyKey: item.Key}
+		n := domain.Notification{Summary: domain.Summary{ID: id, Channel: item.Channel, Recipient: item.Recipient, Priority: p, Status: st, CreatedAt: now}, BatchID: req.ID, TemplateID: item.TemplateID, Content: item.Content, MaxRetries: a.S.Config.MaxRetries, ScheduledAt: item.Scheduled, Metadata: item.Metadata, UpdatedAt: now, CorrelationID: logger.ID(ctx), Traceparent: carrier.Get("traceparent"), IdempotencyKey: item.Key}
 		if e := n.Validate(); e != nil {
 			problem(w, r, 400, fmt.Sprintf("item %d: %s", i+1, e))
 			return
