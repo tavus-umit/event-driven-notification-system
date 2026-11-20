@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS delivery_attempts CASCADE;
+DROP TABLE IF EXISTS notifications CASCADE;
+DROP TABLE IF EXISTS notification_templates CASCADE;
+DROP TABLE IF EXISTS notification_batches CASCADE;
+DROP TABLE IF EXISTS idempotency_keys CASCADE;
+
+DROP TYPE IF EXISTS attempt_status CASCADE;
+DROP TYPE IF EXISTS notification_status CASCADE;
+DROP TYPE IF EXISTS priority_type CASCADE;
+DROP TYPE IF EXISTS channel_type CASCADE;

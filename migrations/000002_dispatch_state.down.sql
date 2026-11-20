@@ -1,0 +1,20 @@
+DROP TRIGGER notifications_dispatch ON notifications;
+DROP FUNCTION notification_transition();
+DROP TABLE notification_outbox;
+DROP INDEX notifications_listing;
+DROP INDEX notifications_expired_leases;
+ALTER TABLE notifications DROP COLUMN correlation_id, DROP COLUMN traceparent, DROP COLUMN claim_id, DROP COLUMN lease_until, DROP COLUMN due_at;
+-- Preserve retry history when returning to the seven-state enum.
+UPDATE notifications SET status='QUEUED' WHERE status::text='RETRY_PENDING';
+ALTER TYPE notification_status RENAME TO notification_status_old;
+CREATE TYPE notification_status AS ENUM ('PENDING','SCHEDULED','QUEUED','PROCESSING','DELIVERED','FAILED','CANCELLED');
+ALTER TABLE notifications ALTER COLUMN status DROP DEFAULT;
+DROP INDEX idx_notifications_scheduled;
+DROP INDEX idx_notifications_status_channel_created;
+ALTER TABLE notifications ALTER COLUMN status TYPE notification_status USING status::text::notification_status;
+ALTER TABLE notifications ALTER COLUMN status SET DEFAULT 'PENDING';
+DROP TYPE notification_status_old;
+CREATE INDEX idx_notifications_scheduled ON notifications(scheduled_at) WHERE status='SCHEDULED';
+CREATE INDEX idx_notifications_status_channel_created ON notifications(status,channel,created_at DESC);
+UPDATE notifications n SET idempotency_key=NULL WHERE EXISTS(SELECT 1 FROM notifications newer WHERE newer.idempotency_key=n.idempotency_key AND (newer.created_at,newer.id)>(n.created_at,n.id));
+CREATE UNIQUE INDEX idx_notifications_idempotency_key ON notifications(idempotency_key) WHERE idempotency_key IS NOT NULL;
