@@ -23,7 +23,7 @@ event-driven-notification-system/
 │   │   └── main.go
 │   ├── scheduler/             # Scheduled notification scanner
 │   │   └── main.go
-│   └── mock-provider/         # Local webhook.site provider simulator
+│   └── cli/                   # Dead-letter queue inspection and replay
 │       └── main.go
 ├── internal/
 │   ├── api/                   # HTTP handlers, routing, middleware, DTOs
@@ -52,7 +52,7 @@ event-driven-notification-system/
 │   └── validator/             # Channel format validators (E.164, RFC 5322, etc.)
 ├── test/                      # Integration and E2E test scripts
 ├── docs/                      # Architectural and technical documentation
-├── .env.example               # Example environment variable file
+├── .env                       # Local runtime configuration
 ├── Dockerfile                 # Multi-stage production container build
 ├── docker-compose.yml         # One-command local setup for all services
 ├── Makefile                   # Developer productivity commands
@@ -63,11 +63,7 @@ event-driven-notification-system/
 
 ## 3. Environment Configuration
 
-Copy `.env.example` to `.env`:
-
-```bash
-cp .env.example .env
-```
+Create `.env` next to `docker-compose.yml`. Set `PROVIDER_WEBHOOK_URL` to your Webhook.site capture URL. The remaining settings have defaults. Compose reads this file automatically, and native Go commands read it when run from the repository root.
 
 ### Key Environment Variables:
 ```env
@@ -99,8 +95,8 @@ RATE_LIMIT_EMAIL=100
 RATE_LIMIT_PUSH=100
 
 # Provider Webhook Configuration
-# Point to your webhook.site URL or use the local mock provider:
-PROVIDER_WEBHOOK_URL=http://localhost:8081/webhook
+# Replace <your-uuid> with the ID from your Webhook.site inbox.
+PROVIDER_WEBHOOK_URL=https://webhook.site/<your-uuid>
 PROVIDER_TIMEOUT_SECONDS=5
 MAX_RETRIES=3
 CIRCUIT_BREAKER_FAIL_THRESHOLD=5
@@ -111,14 +107,14 @@ CIRCUIT_BREAKER_FAIL_THRESHOLD=5
 ## 4. Quick Start: Local Development
 
 ### Option A: One-Command Setup with Docker Compose (Recommended)
-Launch the entire system (PostgreSQL, Redis, API Server, Worker Pool, Mock Webhook Provider, and Prometheus) with a single command:
+Launch the entire system (PostgreSQL, Redis, API Server, channel workers, scheduler, and Prometheus) with a single command:
 
 ```bash
 docker-compose up --build
 ```
 
 - **REST API**: Accessible at `http://localhost:8080`
-- **Mock Provider**: Running at `http://localhost:8081`
+- **Webhook.site** receives outbound requests at the URL in `.env`.
 - **Prometheus Metrics**: `http://localhost:8080/metrics`
 - **Health Check**: `http://localhost:8080/health`
 
@@ -138,17 +134,12 @@ docker-compose up --build
    migrate -path migrations -database "postgres://notification_user:notification_secret@localhost:5432/notification_db?sslmode=disable" up
    ```
 
-3. **Start the Mock External Provider (Terminal 1)**:
-   ```bash
-   go run ./cmd/mock-provider
-   ```
-
-4. **Start the API Server (Terminal 2)**:
+3. **Start the API Server (Terminal 1)**:
    ```bash
    go run ./cmd/server
    ```
 
-5. **Start Channel Workers (Terminal 3)**:
+4. **Start Channel Workers (Terminal 2)**:
    ```bash
    go run ./cmd/worker
    ```

@@ -43,10 +43,12 @@ func Load() (Config, error) {
 	c.DatabaseURL = env("DATABASE_URL", u.String())
 	c.RedisAddr = net.JoinHostPort(env("REDIS_HOST", "localhost"), env("REDIS_PORT", "6379"))
 	c.RedisPassword = env("REDIS_PASSWORD", "")
-	c.ProviderURL = env("PROVIDER_WEBHOOK_URL", "http://localhost:8081/webhook")
-	provider, err := url.Parse(c.ProviderURL)
-	if err != nil || provider.Host == "" || (provider.Scheme != "http" && provider.Scheme != "https") {
-		return c, errors.New("invalid PROVIDER_WEBHOOK_URL")
+	c.ProviderURL = os.Getenv("PROVIDER_WEBHOOK_URL")
+	if c.ProviderURL != "" {
+		provider, err := url.Parse(c.ProviderURL)
+		if err != nil || provider.Host == "" || (provider.Scheme != "http" && provider.Scheme != "https") {
+			return c, errors.New("invalid PROVIDER_WEBHOOK_URL")
+		}
 	}
 	c.Channel = domain.Channel(env("WORKER_CHANNEL", ""))
 	if c.Channel != "" && !c.Channel.Valid() {

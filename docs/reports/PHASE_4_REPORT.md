@@ -2,7 +2,7 @@
 
 ## 1. Executive summary of completed work
 
-An HTTP test server verified the three-field request, correlation header and classification of 202, 400, 422, 429 and 503. Tests also exercised empty acknowledgements, breaker opening and every backoff cap through 60 seconds. The mock serves POST /webhook and GET /health.
+An HTTP test server verified the three-field request, correlation header and classification of 202, 400, 422, 429 and 503. Tests also exercised empty acknowledgements, breaker opening and every backoff cap through 60 seconds.
 
 ### File and symbol inventory
 
@@ -10,12 +10,11 @@ An HTTP test server verified the three-field request, correlation header and cla
 - `go.sum`
 - `internal/provider/provider.go` — `Payload`, `Accepted`, `Result`, `Client`, `New`, `Client.Deliver`, `Client.send`, `Backoff`
 - `internal/provider/provider_test.go` — `TestClassification`, `TestBreakerAndBackoff`, `TestInvalidAck`
-- `cmd/mock-provider/main.go` — `handler`, `main`
 - `docs/reports/PHASE_4_REPORT.md` — phase acceptance record.
 
 ## 2. Design decisions and technical justifications
 
-Each pool owns a sony/gobreaker instance and a reusable HTTP transport. A permanent client error is an unsuccessful delivery but evidence the provider is responding. Redirects are disabled to preserve the configured destination and count each dispatch. A bounded response body protects memory and the audit table. The fixed notification ID is forwarded as an idempotency key for provider-side deduplication after ambiguous timeouts. The mock uses that key to derive a stable response ID.
+Each pool owns a sony/gobreaker instance and a reusable HTTP transport. A permanent client error is an unsuccessful delivery but evidence the provider is responding. Redirects are disabled to preserve the configured destination and count each dispatch. A bounded response body protects memory and the audit table. The fixed notification ID is forwarded as an idempotency key for provider-side deduplication after ambiguous timeouts.
 
 ## 3. Source code walkthrough and annotated snippets
 
@@ -46,11 +45,7 @@ func Backoff(retry int) time.Duration {
 
 ## 4. Verification and testing results
 
-Commands ran from the repository root. Go commands used Ubuntu 22.04 under WSL 2.
-
-```sh
-gofmt -w internal/provider cmd/mock-provider && go test -race -v ./internal/provider ./cmd/mock-provider
-```
+The following results were recorded in WSL 2. The complete original inventory, commands, and output are preserved at `git show ba10a09:docs/reports/PHASE_4_REPORT.md`. To verify the current transport, run `go test -race -v ./internal/provider`.
 
 Observed output (selected lines)
 
@@ -74,7 +69,6 @@ Observed output (selected lines)
 --- PASS: TestInvalidAck (0.00s)
 PASS
 ok  	event-driven-notification-system/internal/provider	1.021s
-?   	event-driven-notification-system/cmd/mock-provider	[no test files]
 ```
 
 ## 5. Prerequisites and handoff

@@ -8,7 +8,7 @@ The testing strategy guarantees that high-volume message ingestion, rate-limitin
                    / \
                   /   \     E2E / Load Tests (k6, Vegetta, Burst Simulation)
                  /-----\
-                /       \    Integration Tests (Postgres, Redis, Mock Provider)
+                /       \    Integration Tests (Postgres, Redis, HTTP test server)
                /---------\
               /           \  Unit Tests (Validation, Backoff Math, Token Bucket, Models)
              /-------------\
@@ -60,7 +60,7 @@ go tool cover -html=coverage.out -o coverage.html
 - **Methodology**:
   1. Enqueue 500 SMS notifications into Redis.
   2. Start SMS channel worker pool with 10 concurrent goroutines.
-  3. Record timestamps of incoming HTTP requests at the mock provider.
+  3. Record timestamps of incoming HTTP requests in the HTTP test handler.
   4. Group request timestamps into 1-second rolling buckets.
   5. **Pass Criteria**: Every 1-second window contains $\le 100$ requests.
 
@@ -76,7 +76,7 @@ go tool cover -html=coverage.out -o coverage.html
 #### Test Scenario C: Transient Failure, Exponential Backoff & DLQ
 - **Objective**: Verify automatic retries upon receiving HTTP 429 or 500, followed by DLQ transfer upon exhaustion.
 - **Methodology**:
-  1. Configure mock provider to return HTTP 500 for a specific recipient.
+  1. Have the test sender return HTTP 500 for a specific recipient.
   2. Enqueue notification with `max_retries = 3`.
   3. Assert worker receives HTTP 500, schedules retry with exponential backoff delay.
   4. Allow backoff timer to expire for all 3 retries.
@@ -88,7 +88,7 @@ go tool cover -html=coverage.out -o coverage.html
 #### Test Scenario D: Circuit Breaker Activation
 - **Objective**: Protect system and downstream provider during an outage.
 - **Methodology**:
-  1. Configure mock provider to drop connections / return 503 for all requests.
+  1. Have the HTTP test handler time out or return 503.
   2. Submit 15 notifications.
   3. **Pass Criteria**:
      - After 5 consecutive failures, circuit breaker transitions to `OPEN`.

@@ -44,7 +44,7 @@ func TestBatchAndLease(t *testing.T) {
 		t.Fatal("cancelled a claimed item", e)
 	}
 	a := domain.DeliveryAttempt{Number: 1, Status: "SUCCESS", HTTPStatus: 202, At: time.Now()}
-	if e = s.Finish(ctx, ns[0].ID, owner, a, domain.Delivered, "mock", nil); e != nil {
+	if e = s.Finish(ctx, ns[0].ID, owner, a, domain.Delivered, "provider-message-id", nil); e != nil {
 		t.Fatal(e)
 	}
 	n, e := s.Get(ctx, ns[0].ID)

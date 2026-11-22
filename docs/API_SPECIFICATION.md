@@ -266,7 +266,7 @@ All 4xx and 5xx responses return a standardized error object:
 
 ## 3. External Provider Webhook Integration
 
-External notification delivery is integrated with a simulated provider (e.g. `webhook.site` or local mock server).
+Workers send notification payloads to the external `PROVIDER_WEBHOOK_URL` specified in `.env`. For the assessment, configure Webhook.site to return HTTP 202 with the acknowledgement below.
 
 ### 3.1. Outbound Request Format
 - **Method & URL**: `POST https://webhook.site/{your-uuid}`

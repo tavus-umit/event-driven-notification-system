@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -17,6 +18,9 @@ import (
 
 func main() { app.Main(run) }
 func run(ctx context.Context, s *app.Services) error {
+	if s.Config.ProviderURL == "" {
+		return errors.New("set PROVIDER_WEBHOOK_URL in .env or the worker environment")
+	}
 	var wg sync.WaitGroup
 	start := func(f func()) { wg.Add(1); go func() { defer wg.Done(); f() }() }
 	ctx, cancel := context.WithCancel(ctx)

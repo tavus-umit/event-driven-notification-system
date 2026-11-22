@@ -31,9 +31,4 @@ FROM runtime AS cli
 COPY --from=build /out/cli /usr/local/bin/cli
 ENTRYPOINT ["cli"]
 
-FROM runtime AS mock-provider
-COPY --from=build /out/mock-provider /usr/local/bin/mock-provider
-EXPOSE 8081
-ENTRYPOINT ["mock-provider"]
-
 FROM api AS server

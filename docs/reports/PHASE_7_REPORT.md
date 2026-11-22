@@ -97,4 +97,4 @@ ok  	event-driven-notification-system/internal/api	2.198s
 
 ## 5. Prerequisites and handoff
 
-The Compose stack needs one scheduler, an API, one worker service per channel and the mock provider. The CLI accepts dlq list or dlq replay with channel, limit and priority flags. Set OTEL_EXPORTER_OTLP_ENDPOINT to send distributed spans to an OTLP collector.
+The Compose stack needs one scheduler, an API, one worker service per channel and an external webhook URL. The CLI accepts dlq list or dlq replay with channel, limit and priority flags. Set OTEL_EXPORTER_OTLP_ENDPOINT to send distributed spans to an OTLP collector.

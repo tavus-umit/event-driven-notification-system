@@ -2,6 +2,8 @@
 
 A high-throughput, horizontally scalable, event-driven notification platform engineered in **Go (1.22+)**. The system processes and dispatches millions of messages across **SMS**, **Email**, and **Push** channels, enforcing strict per-channel rate limits (100 messages/sec per channel), priority queuing (`high`, `normal`, `low`), intelligent exponential backoff retries with full jitter, circuit breaking, idempotency, and real-time status tracking.
 
+New to the project? [Follow the step-by-step Windows guide to send a message, check delivery, and use every feature.](docs/USER_GUIDE.md)
+
 ---
 
 ## Architecture Overview
@@ -89,7 +91,7 @@ Detailed engineering documentation and technical specifications are available in
 - Go 1.22+ (for local bare-metal development)
 
 ### 1. Launch with Docker Compose
-To start the API Server, Worker Pool, Mock Webhook Provider, PostgreSQL, Redis, and Prometheus in a single command:
+Set `PROVIDER_WEBHOOK_URL` in a `.env` file in the repository root to your Webhook.site capture URL (`https://webhook.site/<your-uuid>`). Configure the endpoint to return HTTP 202 with a JSON acknowledgement as shown in the [Windows user guide](docs/USER_GUIDE.md#use-webhooksite-as-the-provider-in-the-assessment). Then start the API, scheduler, workers, PostgreSQL, Redis, and Prometheus.
 
 ```bash
 docker compose up -d --build --wait
@@ -172,10 +174,10 @@ Run `make test-integration` from a POSIX shell to start PostgreSQL and Redis and
 
 ### Local operation
 
-The API runs on port 8080, the mock webhook on 8081, and Prometheus on 9090. Compose starts a scheduler and one worker pool for each channel. Each binary applies the embedded migrations at startup. Copy `.env.example` to `.env` to override defaults. Leave `PROVIDER_WEBHOOK_URL` unset to use the local mock. Set it to a reachable provider URL for external delivery.
+The API runs on port 8080 and Prometheus on 9090. All three channel workers send to the external provider configured in `.env`. After changing its URL, run `docker compose up -d --wait` to apply the change. Each binary applies the embedded migrations at startup.
 
 - Set `WORKERS_PER_CHANNEL` to change goroutine concurrency. The shared admission ceiling is 100 provider calls per rolling second per channel. Slow responses reduce achievable throughput.
-- Set `MOCK_FAILURE_STATUS=503` and optionally `MOCK_FAILURE_RECIPIENT` in Compose to exercise retries. A permanent response such as 422 exercises immediate DLQ routing.
+- Run `python scripts/smoke.py` to send three sample notifications to your configured webhook. CI uses `python scripts/smoke.py --cancel-scheduled` to exercise batch ingestion, idempotency, and cancellation with zero provider calls. The Go integration tests exercise actual HTTP delivery and retries against an isolated test endpoint.
 - Use `go run ./cmd/cli dlq list --channel sms` to inspect failures and `go run ./cmd/cli dlq replay --channel sms --limit 20 --priority high` to replay them. Replay preserves prior audit records.
 - Scrape `/metrics` on the API for queue depths, fleet-wide provider attempt counts and latency histograms. Prometheus also scrapes worker-local results, retry and throttling counters.
 - Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4317` to export spans to a reachable OTLP/gRPC collector. Trace context propagates across ingestion, queue processing and the provider call.

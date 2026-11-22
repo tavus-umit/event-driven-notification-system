@@ -1,4 +1,4 @@
-.PHONY: all build run-api run-worker run-scheduler run-mock test-integration test test-coverage lint migrate-up migrate-down up down clean
+.PHONY: all build run-api run-worker run-scheduler test-integration test test-coverage lint migrate-up migrate-down up down clean
 
 # Variables
 DB_URL ?= postgres://notification_user:notification_secret@localhost:5432/notification_db?sslmode=disable
@@ -10,7 +10,6 @@ build:
 	go build -v -o bin/api ./cmd/server
 	go build -v -o bin/worker ./cmd/worker
 	go build -v -o bin/scheduler ./cmd/scheduler
-	go build -v -o bin/mock-provider ./cmd/mock-provider
 	go build -v -o bin/cli ./cmd/cli
 
 run-api:
@@ -21,9 +20,6 @@ run-worker:
 
 run-scheduler:
 	go run ./cmd/scheduler
-
-run-mock:
-	go run ./cmd/mock-provider
 
 test: test-integration
 

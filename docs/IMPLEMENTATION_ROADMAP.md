@@ -27,7 +27,6 @@ flowchart LR
      - `cmd/server/main.go`: API Gateway entrypoint.
      - `cmd/worker/main.go`: Channel worker daemon.
      - `cmd/scheduler/main.go`: Scheduled notification ticker.
-     - `cmd/mock-provider/main.go`: Local mock webhook simulator.
      - `internal/config/`: Configuration struct with environment variable loading.
      - `internal/domain/`: Core domain entities, types, value objects, and repository interfaces.
      - `pkg/logger/`: Structured JSON logging wrapping `log/slog`.
@@ -93,7 +92,7 @@ flowchart LR
   1. Implement outbound HTTP Provider Client (`internal/provider`):
      - Formats payload: `{"to": "...", "channel": "...", "content": "..."}`.
      - Expects HTTP 202: `{"messageId": "...", "status": "accepted", "timestamp": "..."}`.
-     - Configurable target URL (e.g. `https://webhook.site/{uuid}` or local mock provider).
+     - Configurable external target URL from `PROVIDER_WEBHOOK_URL`.
   2. Implement Error Classifier (Transient vs Permanent).
   3. Implement Exponential Backoff with Full Jitter:
      - Calculates sleep time, puts message in `queue:{channel}:delayed` (Redis ZSET).
@@ -142,7 +141,7 @@ flowchart LR
   1. Multi-stage `Dockerfile`:
      - Builds minimal, secure Alpine/scratch binaries.
   2. `docker-compose.yml`:
-     - Services: `postgres`, `redis`, `api`, `worker`, `mock-provider`, `prometheus`.
+     - Services include `postgres`, `redis`, `api`, `scheduler`, one worker per channel, and `prometheus`.
      - One-command setup (`docker-compose up --build`).
   3. Comprehensive Test Suite:
      - Single command execution: `make test`.

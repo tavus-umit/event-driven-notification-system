@@ -6,7 +6,7 @@ x-app-env: &app-env
   DB_NAME: notification_db
   DB_SSLMODE: disable
   REDIS_HOST: redis
-  PROVIDER_WEBHOOK_URL: ${PROVIDER_WEBHOOK_URL:-http://mock-provider:8081/webhook}
+  PROVIDER_WEBHOOK_URL: ${PROVIDER_WEBHOOK_URL:-}
   DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-50}
   DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-25}
   SERVER_READ_TIMEOUT: ${SERVER_READ_TIMEOUT:-10s}
@@ -65,19 +65,6 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 5
-
-  mock-provider:
-    build: {context: ., target: mock-provider}
-    restart: unless-stopped
-    ports: ["8081:8081"]
-    environment:
-      MOCK_FAILURE_STATUS: ${MOCK_FAILURE_STATUS:-}
-      MOCK_FAILURE_RECIPIENT: ${MOCK_FAILURE_RECIPIENT:-}
-    healthcheck:
-      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:8081/health"]
-      interval: 5s
-      timeout: 4s
       retries: 5
 
   api:

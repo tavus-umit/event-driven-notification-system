@@ -2,10 +2,10 @@
 
 ## 1. Executive summary of completed work
 
-Built and ran the API, three channel workers, scheduler, mock provider, PostgreSQL 16, Redis 7 and Prometheus. Verified embedded migration version 6 and upgrades from a populated version 1. The full uncached race suite passed with the database tests enabled. Two independently connected worker pools delivered 500 unique HTTP requests with a peak of 100 in a rolling second. The separate Compose burst produced 500 distinct IDs and 500 provider acknowledgements with the same peak.
+Built and ran the API, three channel workers, scheduler, PostgreSQL 16, Redis 7 and Prometheus. Verified embedded migration version 6 and upgrades from a populated version 1. The full uncached race suite passed with the database tests enabled. Two independently connected worker pools delivered 500 unique HTTP requests with a peak of 100 in a rolling second. The separate Compose burst produced 500 distinct IDs and 500 provider acknowledgements with the same peak.
 
-- The Dockerfile builds non-root images for server, worker, scheduler, CLI and mock provider. Compose configures durable Redis AOF, independent pools and bounded shutdown. The CI workflow runs lint, service-backed race tests, container startup and the three-channel smoke test.
-- The integration suite covers atomic rejection, keyed batch-item receipts, stale worker fencing, panic quarantine, replay after an interrupted Redis acknowledgement, DLQ replay, breaker recovery, template scheduling and migration rollback/upgrade. The mock can return a chosen HTTP failure for a selected recipient.
+- The Dockerfile builds non-root images for the server, worker, scheduler, and CLI. Compose configures durable Redis AOF, independent pools and bounded shutdown. The CI workflow runs lint, service-backed race tests, container startup and the three-channel smoke test.
+- The integration suite covers atomic rejection, keyed batch-item receipts, stale worker fencing, panic quarantine, replay after an interrupted Redis acknowledgement, DLQ replay, breaker recovery, template scheduling and migration rollback/upgrade.
 - The API exposes global provider counts and latency histograms. PostgreSQL maintains bounded counters on audit insertion. Batch counters handle terminal transitions and manual replay. The OpenAPI description includes templates, WebSockets and service probes.
 - The final inventory includes the Go sources formatted and verified in this phase. The smoke script defines `request` and `main`. SQL adds `attempt_bucket`, `record_attempt_stats`, `maintain_batch_counts` and `dispatch_inserted_notifications`. The Makefile adds `test-integration` and `run-scheduler` and includes the CLI in `build`.
 
@@ -18,7 +18,6 @@ Built and ran the API, three channel workers, scheduler, mock provider, PostgreS
 - `.github/workflows/ci.yml`
 - `.golangci.yml`
 - `Makefile`
-- `.env.example`
 - `README.md`
 - `docs/openapi.yaml`
 - `go.mod`
@@ -33,8 +32,6 @@ Built and ran the API, three channel workers, scheduler, mock provider, PostgreS
 - `migrations/000006_bulk_dispatch.down.sql`
 - `cmd/cli/main_test.go` — `TestDLQReplay`
 - `cmd/cli/main.go` — `main`, `run`, `execute`
-- `cmd/mock-provider/main_test.go` — `TestMockFailure`
-- `cmd/mock-provider/main.go` — `handler`, `main`
 - `cmd/scheduler/main.go` — `main`
 - `cmd/server/main.go` — `main`, `run`
 - `cmd/worker/main.go` — `main`, `run`
@@ -199,7 +196,7 @@ CGO_ENABLED=0 go test -c -o /mnt/c/Users/holym/AppData/Local/Temp/notify-bench-0
 CGO_ENABLED=0 go test -c -o /mnt/c/Users/holym/AppData/Local/Temp/notify-bench-01a1f93f/http-bench ./internal/api
 ```
 
-Additional Docker Desktop checks ran from PowerShell.
+Additional Docker Desktop checks ran from PowerShell. The commands below are excerpts. The complete phase inventory, original burst commands and logs are preserved at `git show 445110e:docs/reports/PHASE_8_REPORT.md`.
 
 ```powershell
 $mount="type=bind,source=$env:TEMP\notify-bench-01a1f93f,target=/bench,readonly"
@@ -210,18 +207,6 @@ docker run @settings /bench/http-bench '-test.run=^$' '-test.bench=^BenchmarkBat
 exit $LASTEXITCODE
 $samples=@(docker logs notification_postgres --since 180s 2>&1 | ForEach-Object { if ("$_" -match 'duration: ([0-9.]+) ms\s+statement: copy .*notifications') { [double]::Parse($Matches[1],[cultureinfo]::InvariantCulture) } } | Sort-Object)
 if ($samples.Count -gt 0) { "COPY samples=$($samples.Count) median_ms=$($samples[[int][math]::Ceiling(0.5*$samples.Count)-1]) p95_ms=$($samples[[int][math]::Ceiling(0.95*$samples.Count)-1]) max_ms=$($samples[-1])" } else { docker logs notification_postgres --since 60s 2>&1 | Select-String -Pattern 'duration:' | Select-Object -Last 6 }
-$base='http://localhost:8080/api/v1/notifications'
-$items=1..500 | ForEach-Object { @{channel='sms';recipient='+12025550123';content="Mock burst $_";priority='normal'} }
-$r=Invoke-RestMethod -Method Post -Uri "$base/batch" -ContentType 'application/json' -Body (@{notifications=$items} | ConvertTo-Json -Depth 4 -Compress)
-$id=[guid]$r.batchId
-for ($i=0;$i -lt 100;$i++) { $b=Invoke-RestMethod "$base/batches/$id"; if ($b.progressPercentage -eq 100) {break}; Start-Sleep -Milliseconds 300 }
-if ($b.breakdown.delivered -ne 500) {throw 'Incomplete burst'}
-$query="WITH accepted AS (SELECT a.notification_id,(a.response_body::jsonb->>'timestamp')::timestamptz AS at FROM delivery_attempts a JOIN notifications n ON n.id=a.notification_id WHERE n.batch_id='$id' AND a.http_status_code=202), observed AS (SELECT *,count(*) OVER (ORDER BY at RANGE BETWEEN interval '0.999999 seconds' PRECEDING AND CURRENT ROW) AS in_window FROM accepted) SELECT count(DISTINCT notification_id),count(*),max(in_window),round(extract(epoch FROM max(at)-min(at)),3) FROM observed"
-$result=docker exec notification_postgres psql -U notification_user -d notification_db -Atc $query
-if($LASTEXITCODE -ne 0){exit 1}
-"batch=$id unique|acknowledgements|rolling_peak|elapsed_seconds=$result"
-$parts=$result.Split('|')
-if($parts[0] -ne '500' -or $parts[1] -ne '500' -or [int]$parts[2] -gt 100){exit 1}
 docker compose ps --format 'table {{.Service}}\t{{.Status}}'
 (Invoke-RestMethod 'http://localhost:9090/api/v1/targets').data.activeTargets | Select-Object scrapeUrl,health
 ```
@@ -231,8 +216,6 @@ Observed output (selected lines)
 ```text
 --- PASS: TestDLQReplay (12.94s)
 ok  	event-driven-notification-system/cmd/cli	13.995s
---- PASS: TestMockFailure (0.00s)
-ok  	event-driven-notification-system/cmd/mock-provider	1.024s
 --- PASS: TestAPIReplayAndStream (13.05s)
 --- PASS: TestBatchBoundariesAndItemReceipt (1.80s)
 --- PASS: TestScheduledTemplate (7.78s)
@@ -283,6 +266,6 @@ Prometheus scrape targets: api:8080, worker-sms:9091, worker-email:9091, worker-
 
 ## 5. Prerequisites and handoff
 
-The complete stack remains available through Docker Compose. API readiness is at http://localhost:8080/ready and Prometheus at http://localhost:9090. Run `make test-integration` with a POSIX shell to repeat the local service-backed suite. Use `python scripts/smoke.py` against the local mock stack for a shorter end-to-end check. The core tests need a development PostgreSQL role with CREATEDB and dedicated Redis logical databases. The benchmarks use logical database 6.
+The complete stack remains available through Docker Compose. API readiness is at http://localhost:8080/ready and Prometheus at http://localhost:9090. Run `make test-integration` with a POSIX shell to repeat the local service-backed suite. Use `python scripts/smoke.py --cancel-scheduled` to check the running stack locally, or `python scripts/smoke.py` to exercise the configured external webhook. The core tests need a development PostgreSQL role with CREATEDB and dedicated Redis logical databases. The benchmarks use logical database 6.
 
 External delivery is at least once. A provider should honor the stable notification ID in its idempotency header to deduplicate a retry after an ambiguous acknowledgement. The workflow definition and its local equivalents were verified here. GitHub-hosted execution requires a push or pull request. OTLP export uses the collector endpoint supplied by the deployment.
